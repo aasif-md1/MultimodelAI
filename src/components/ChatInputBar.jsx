@@ -1,38 +1,65 @@
 import { useState, useRef, useEffect, useImperativeHandle } from 'react';
-import { ArrowUp, Paperclip, FileVideo, Mic, Camera, X, Square } from 'lucide-react';
+import { KurageIcon } from './KurageIcons';
+import { Camera, X, Square } from 'lucide-react';
 import { useCamera } from '../hooks/useCamera';
 import { compressImage } from '../utils/imageCompressor';
+import { OceanEvent } from '../utils/oceanEvents';
 
-export default function ChatInputBar({ 
-  onSendMessage, 
-  isProcessing, 
+export default function ChatInputBar({
+  onSendMessage,
+  isProcessing,
   isStreaming,
   onStopStreaming,
-  ref 
+  mode = 'auto',
+  onSelectMode,
+  isWebSearchOn = false,
+  onToggleWebSearch,
+  setStatusMessage,
+  ref,
 }) {
   const [text, setText] = useState('');
   const [mediaFile, setMediaFile] = useState(null);
-  const [mediaPreview, setMediaPreview] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
-  
+  const [isSavedFeedback, setIsSavedFeedback] = useState(false);
+
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const composerRef = useRef(null);
   const { videoRef, startCamera, stopCamera, captureFrame } = useCamera();
   const recognitionRef = useRef(null);
 
-  // Expose imperative methods for suggestion chips
   useImperativeHandle(ref, () => ({
     setText: (val) => {
       setText(val);
-      textareaRef.current?.focus();
+      OceanEvent.typing();
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 224)}px`;
+        }
+      }, 20);
     },
     focus: () => {
       textareaRef.current?.focus();
-    }
+    },
   }));
 
-  // Handle Voice Recognition setup
+  // Track composer bounding box for ocean jellyfish target
+  useEffect(() => {
+    const updateTarget = () => {
+      if (composerRef.current) {
+        const r = composerRef.current.getBoundingClientRect();
+        OceanEvent.setTarget(r.left + r.width / 2, r.top + r.height / 2);
+      }
+    };
+    updateTarget();
+    window.addEventListener('resize', updateTarget);
+    return () => window.removeEventListener('resize', updateTarget);
+  }, []);
+
+  // Voice recognition setup
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -44,9 +71,10 @@ export default function ChatInputBar({
         const transcript = Array.from(event.results)
           .map((result) => result[0].transcript)
           .join('');
-        
+
         if (event.results[0].isFinal) {
           setText((prev) => prev + (prev.length > 0 ? ' ' : '') + transcript);
+          OceanEvent.typing();
         }
       };
 
@@ -65,12 +93,14 @@ export default function ChatInputBar({
     if (isRecording) {
       recognitionRef.current?.stop();
       setIsRecording(false);
+      setStatusMessage?.({ tone: 'ok', title: 'Voice ended', msg: 'Audio transcribed.' });
     } else {
       if (recognitionRef.current) {
         recognitionRef.current.start();
         setIsRecording(true);
+        setStatusMessage?.({ tone: 'ok', title: 'Listening', msg: 'Speak your query clearly.' });
       } else {
-        alert("Voice recognition is not supported in this browser.");
+        setStatusMessage?.({ tone: 'error', title: 'Voice unsupported', msg: 'Browser does not support speech recognition.' });
       }
     }
   };
@@ -91,13 +121,13 @@ export default function ChatInputBar({
       try {
         const res = await fetch(dataUrl);
         const blob = await res.blob();
-        const file = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
+        const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
         const compressedFile = await compressImage(file);
-        const previewUrl = URL.createObjectURL(compressedFile);
-        handleFileAttachment(compressedFile, previewUrl);
+        handleFileAttachment(compressedFile);
         handleCameraToggle();
+        setStatusMessage?.({ tone: 'ok', title: 'Photo captured', msg: 'Added to your prompt.' });
       } catch (err) {
-        console.error("Failed to capture and compress camera image:", err);
+        console.error('Failed to capture and compress camera image:', err);
       }
     }
   };
@@ -106,39 +136,62 @@ export default function ChatInputBar({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       try {
-        const compressedFile = await compressImage(file);
-        const previewUrl = URL.createObjectURL(compressedFile);
-        handleFileAttachment(compressedFile, previewUrl);
-      } catch (err) {
-        console.error("Failed to compress uploaded image:", err);
-        const previewUrl = URL.createObjectURL(file);
-        handleFileAttachment(file, previewUrl);
+        const compressedFile = file.type.startsWith('image') ? await compressImage(file) : file;
+        handleFileAttachment(compressedFile);
+        setStatusMessage?.({ tone: 'ok', title: 'File attached', msg: `${file.name} ready with prompt.` });
+      } catch {
+        handleFileAttachment(file);
       }
     }
   };
 
-  const handleFileAttachment = (file, previewUrl) => {
+  const handleFileAttachment = (file) => {
     setMediaFile(file);
-    setMediaPreview(previewUrl);
   };
 
   const clearAttachment = () => {
     setMediaFile(null);
-    setMediaPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setStatusMessage?.({ tone: 'ok', title: 'File removed', msg: 'Composer reset.' });
+  };
+
+  const formatFileSize = (b) => {
+    return b < 1024 ? b + ' B' : b < 1048576 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1) + ' MB';
+  };
+
+  const handleTextChange = (e) => {
+    setText(e.target.value);
+    OceanEvent.typing();
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 224)}px`;
   };
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    if ((!text.trim() && !mediaFile) || isProcessing) return;
+    e?.preventDefault();
+    const cleanText = text.trim();
+    if (!cleanText && !mediaFile) {
+      OceanEvent.dim();
+      setStatusMessage?.({ tone: 'error', title: 'Write a prompt first', msg: 'Type a question or select a starting point below.' });
+      return;
+    }
+    if (isProcessing) return;
+
+    OceanEvent.pulse();
+    setIsSavedFeedback(true);
+    setTimeout(() => setIsSavedFeedback(false), 1200);
 
     onSendMessage({
-      text: text.trim(),
-      media: mediaFile
+      text: cleanText,
+      media: mediaFile,
+      mode,
+      webSearch: isWebSearchOn,
     });
 
     setText('');
     clearAttachment();
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -148,155 +201,222 @@ export default function ChatInputBar({
     }
   };
 
+  const hasContent = text.trim().length > 0 || !!mediaFile;
+
   return (
-    <div className="relative w-full max-w-3xl mx-auto px-4 pb-6">
-      
-      {/* Camera Overlay */}
+    <div className="relative w-full">
+      {/* Live Webcam Modal / Overlay */}
       {isCameraActive && (
-        <div className="absolute bottom-full left-4 right-4 sm:left-auto sm:right-4 mb-3 p-3 bg-[#26242C] rounded-2xl border border-white/[0.1] shadow-2xl z-30">
-          <div className="flex justify-between items-center mb-2 px-1 text-xs text-[#A6A2AE]">
-            <span className="flex items-center gap-1.5 font-medium text-[#EDEAE3]">
-              <span className="h-2 w-2 rounded-full bg-[#C97B4A]" />
-              Webcam Live
+        <div className="absolute bottom-full left-4 right-4 sm:left-auto sm:right-4 mb-3 p-3 bg-[var(--ink-850)] rounded-2xl border border-[var(--border-strong)] shadow-2xl z-40 backdrop-blur-xl">
+          <div className="flex justify-between items-center mb-2 px-1 text-xs text-[var(--mist-400)]">
+            <span className="flex items-center gap-1.5 font-medium text-[var(--mist-50)]">
+              <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+              Camera Live
             </span>
-            <button 
-              onClick={handleCameraToggle} 
-              className="text-[#A6A2AE] hover:text-[#EDEAE3] p-1 rounded-md hover:bg-white/[0.06] transition-colors"
+            <button
+              onClick={handleCameraToggle}
+              className="text-[var(--mist-400)] hover:text-white p-1 rounded-md hover:bg-white/[0.08] transition-colors"
               aria-label="Close camera"
             >
               <X size={15} />
             </button>
           </div>
-          <video 
-            ref={videoRef} 
-            className="w-full sm:w-80 h-auto rounded-xl bg-black object-cover aspect-video border border-white/[0.08]" 
-            autoPlay playsInline muted
+          <video
+            ref={videoRef}
+            className="w-full sm:w-80 h-auto rounded-xl bg-black object-cover aspect-video border border-[var(--border)]"
+            autoPlay
+            playsInline
+            muted
           />
-          <button 
+          <button
             onClick={takePhoto}
-            className="w-full mt-2.5 py-2 bg-[#C97B4A] hover:bg-[#DA8E5D] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+            className="w-full mt-2.5 py-2 bg-gradient-to-r from-[var(--cyan-200)] to-[var(--violet-200)] text-[var(--ink-950)] text-xs font-semibold rounded-xl transition-all hover:brightness-110 cursor-pointer shadow-md"
           >
-            Capture Photo
+            Capture Frame
           </button>
         </div>
       )}
 
-      {/* Main Composer Box */}
-      <div className="bg-[#26242C] border border-white/[0.08] rounded-2xl p-3 flex flex-col shadow-lg transition-all focus-within:border-[#C97B4A] focus-within:ring-1 focus-within:ring-[#C97B4A]">
-        
-        {/* Attachment Thumbnail */}
-        {mediaPreview && (
-          <div className="mb-2 relative inline-block w-fit">
-            {mediaFile?.type.startsWith('video') ? (
-              <div className="w-40 h-24 bg-[#1D1C22] rounded-lg overflow-hidden flex items-center justify-center border border-white/[0.08] relative">
-                <FileVideo className="w-8 h-8 text-[#A6A2AE]" />
-                <span className="absolute bottom-1 right-1.5 text-[9px] bg-black/70 px-1.5 py-0.5 rounded text-[#EDEAE3] font-mono">Video</span>
-              </div>
-            ) : (
-              <img src={mediaPreview} alt="attachment" className="w-36 h-auto rounded-lg border border-white/[0.08] max-h-36 object-cover" />
-            )}
-            <button 
+      {/* Kurage Exact Composer Form */}
+      <form
+        ref={composerRef}
+        onSubmit={handleSubmit}
+        className="composer"
+        id="composer"
+        data-ready={hasContent ? '' : undefined}
+        noValidate
+      >
+        <label htmlFor="prompt" className="sr-only">
+          Prompt
+        </label>
+        <textarea
+          id="prompt"
+          name="prompt"
+          ref={textareaRef}
+          value={text}
+          onChange={handleTextChange}
+          onKeyDown={handleKeyDown}
+          rows={2}
+          maxLength={12000}
+          placeholder="Ask SpaceAI anything…"
+          autoComplete="off"
+          spellCheck="true"
+          style={{ outline: 'none', boxShadow: 'none' }}
+        />
+
+        {/* Attachment Card */}
+        {mediaFile && (
+          <div className="attachment" id="attachment">
+            <KurageIcon name="file" className="i i-sm" />
+            <span className="name">{mediaFile.name}</span>
+            <span className="size">{formatFileSize(mediaFile.size)}</span>
+            <button
+              type="button"
               onClick={clearAttachment}
-              className="absolute -top-1.5 -right-1.5 bg-[#D9695F] hover:bg-[#c7584e] text-white rounded-full p-1 shadow transition-transform hover:scale-110"
-              aria-label="Remove attachment"
+              aria-label={`Remove ${mediaFile.name}`}
             >
-              <X className="w-3 h-3" />
+              <KurageIcon name="x" className="i i-sm" />
             </button>
           </div>
         )}
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask Space anything..."
-          className="w-full bg-transparent text-[#EDEAE3] placeholder-[#716D7A] outline-none resize-none max-h-48 overflow-y-auto px-1 py-1 text-sm md:text-base leading-relaxed font-sans"
-          rows={Math.min(Math.max(text.split('\n').length, 1), 6)}
-        />
-
-        {/* Composer Toolbar */}
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/[0.04]">
-          <div className="flex items-center gap-1">
-            <input 
-              type="file" 
-              className="hidden" 
-              ref={fileInputRef} 
+        {/* Toolbar */}
+        <div className="toolbar">
+          <div className="tools">
+            <input
+              type="file"
+              ref={fileInputRef}
               onChange={handleFileChange}
-              accept="image/*,video/*"
+              className="sr-only"
+              id="file"
+              tabIndex={-1}
+              aria-hidden="true"
+              accept="image/*,video/*,.pdf,.txt,.md,.json"
             />
-            
-            {/* Flat Neutral Action Buttons */}
-            <button 
+
+            {/* Attach button */}
+            <button
               type="button"
+              className="tool"
+              id="attach"
               onClick={() => fileInputRef.current?.click()}
-              className="p-1.5 text-[#A6A2AE] hover:text-[#EDEAE3] hover:bg-white/[0.06] rounded-lg transition-colors"
-              title="Attach media"
-              aria-label="Attach media"
+              aria-label="Attach a file"
             >
-              <Paperclip className="w-4 h-4" />
+              <KurageIcon name="plus" className="i" />
             </button>
 
-            <button 
+            {/* Camera capture button */}
+            <button
               type="button"
+              className="tool"
               onClick={handleCameraToggle}
-              className={`p-1.5 rounded-lg transition-colors ${
-                isCameraActive 
-                  ? 'text-[#C97B4A] bg-[#C97B4A]/10' 
-                  : 'text-[#A6A2AE] hover:text-[#EDEAE3] hover:bg-white/[0.06]'
-              }`}
+              aria-pressed={isCameraActive}
+              aria-label="Camera capture"
               title="Camera capture"
-              aria-label="Toggle camera"
             >
-              <Camera className="w-4 h-4" />
+              <Camera className="i" />
             </button>
 
-            <button 
+            {/* Response Mode Dropdown */}
+            <div className="mode">
+              <KurageIcon
+                name={mode === 'fast' ? 'fast' : mode === 'think' ? 'think' : 'auto'}
+                className="i i-sm mode-icon"
+              />
+              <label htmlFor="mode" className="sr-only">
+                Response mode
+              </label>
+              <select
+                id="mode"
+                name="mode"
+                value={mode}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  onSelectMode(m);
+                  setStatusMessage?.({
+                    tone: 'ok',
+                    title: `${m[0].toUpperCase() + m.slice(1)} mode`,
+                    msg:
+                      m === 'fast'
+                        ? 'Shorter answers, sooner. The jellyfish swim quicker too.'
+                        : m === 'think'
+                        ? 'Slower and more thorough, working through the problem step by step.'
+                        : 'SpaceAI picks how deep to go for each prompt.',
+                  });
+                }}
+              >
+                <option value="auto">Auto</option>
+                <option value="fast">Fast</option>
+                <option value="think">Think</option>
+              </select>
+              <KurageIcon name="chevron" className="i i-sm chev" />
+            </div>
+
+            {/* Web Search Button */}
+            <button
               type="button"
+              className="tool"
+              id="web"
+              aria-pressed={isWebSearchOn}
+              onClick={() => {
+                const next = !isWebSearchOn;
+                onToggleWebSearch?.();
+                setStatusMessage?.({
+                  tone: 'ok',
+                  title: next ? 'Web search on' : 'Web search off',
+                  msg: next
+                    ? 'Your next prompts can include fresh pages from the web.'
+                    : 'SpaceAI will answer from what it already knows.',
+                });
+              }}
+              aria-label="Search the web"
+            >
+              <KurageIcon name="globe" className="i" />
+            </button>
+
+            {/* Voice Input Button */}
+            <button
+              type="button"
+              className="tool"
+              id="mic"
               onClick={handleMicClick}
-              className={`flex items-center gap-1 p-1.5 rounded-lg transition-colors ${
-                isRecording 
-                  ? 'text-[#D9695F] bg-[#D9695F]/10' 
-                  : 'text-[#A6A2AE] hover:text-[#EDEAE3] hover:bg-white/[0.06]'
-              }`}
-              title="Voice input"
               aria-label="Voice input"
             >
-              <Mic className="w-4 h-4" />
-              {isRecording && <span className="w-1.5 h-1.5 rounded-full bg-[#D9695F] animate-ping" />}
+              <KurageIcon name="mic" className="i" />
             </button>
           </div>
 
-          {/* Send or Stop Generation Button */}
-          {isStreaming ? (
-            <button
-              type="button"
-              onClick={onStopStreaming}
-              className="p-2 bg-[#1D1C22] hover:bg-[#2C2A33] text-[#EDEAE3] border border-white/[0.1] rounded-xl transition-colors cursor-pointer"
-              title="Stop generating"
-              aria-label="Stop generating"
-            >
-              <Square className="w-3.5 h-3.5 fill-current" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              disabled={(!text.trim() && !mediaFile) || isProcessing}
-              className="p-2 bg-[#C97B4A] hover:bg-[#DA8E5D] text-white disabled:bg-[#1D1C22] disabled:text-[#716D7A] rounded-xl transition-colors cursor-pointer disabled:cursor-not-allowed"
-              title="Send prompt"
-              aria-label="Send prompt"
-            >
-              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
-            </button>
-          )}
+          {/* Right Toolbar / Send Button */}
+          <div className="tools tools-right">
+            <p className="hint" aria-hidden="true">
+              <kbd>↵</kbd> save · <kbd>⇧↵</kbd> new line
+            </p>
+
+            {isStreaming ? (
+              <button
+                type="button"
+                className="send"
+                onClick={onStopStreaming}
+                aria-label="Stop generating"
+                title="Stop generating"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className={`send ${isSavedFeedback ? 'is-saved' : ''}`}
+                id="send"
+                aria-label="Send prompt"
+                disabled={!hasContent || isProcessing}
+              >
+                <KurageIcon name="arrow" className="i i-arrow" />
+                <KurageIcon name="check" className="i i-check" />
+              </button>
+            )}
+          </div>
         </div>
-
-      </div>
-
-      <div className="text-center mt-2.5 text-[11px] text-[#716D7A] cursor-default tracking-wide">
-        AI can make mistakes. Consider verifying important information.
-      </div>
+      </form>
     </div>
   );
 }

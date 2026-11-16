@@ -1,37 +1,34 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, MessageSquare, PanelLeftClose, Settings, HelpCircle, Search, MoreHorizontal, Edit2, Trash2, Check } from 'lucide-react';
-import Logo from './Logo';
+import { KurageIcon, KurageLogo, KurageAvatar } from './KurageIcons';
+import { Trash2, Edit2, Check, X } from 'lucide-react';
 
-export default function Sidebar({ 
-  sessions = [], 
-  currentSessionId, 
-  onNewChat, 
-  onSelectSession, 
-  onDeleteSession, 
+export default function Sidebar({
+  sessions = [],
+  currentSessionId,
+  onNewChat,
+  onSelectSession,
+  onDeleteSession,
   onRenameSession,
-  onToggle,
+  isCollapsed,
+  onToggleCollapse,
+  onOpenHistory,
+  onOpenLibrary,
+  isMotionPlaying,
+  onToggleMotion,
+  onOpenShortcuts,
   onOpenSettings,
-  onOpenHelp
+  userName = 'User',
+  isMobileDrawer = false,
+  onCloseMobileDrawer,
 }) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeMenuSessionId, setActiveMenuSessionId] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
+  const [tooltip, setTooltip] = useState({ text: '', top: 0, visible: false });
   const editInputRef = useRef(null);
-  const menuRef = useRef(null);
 
-  // Close context menu on outside click
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setActiveMenuSessionId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
+  const modKey = isMac ? '⌘' : 'Ctrl';
 
-  // Auto-focus inline edit input
   useEffect(() => {
     if (editingSessionId && editInputRef.current) {
       editInputRef.current.focus();
@@ -39,14 +36,8 @@ export default function Sidebar({
     }
   }, [editingSessionId]);
 
-  const filteredSessions = sessions.filter(s => {
-    const title = s.title || 'New Conversation';
-    return title.toLowerCase().includes(searchQuery.toLowerCase());
-  });
-
   const handleStartRename = (session, e) => {
     e.stopPropagation();
-    setActiveMenuSessionId(null);
     setEditingSessionId(session.id);
     setEditTitle(session.title || 'New Conversation');
   };
@@ -67,175 +58,261 @@ export default function Sidebar({
     }
   };
 
+  const showTip = (e, text) => {
+    if (!isCollapsed || isMobileDrawer) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    setTooltip({
+      text,
+      top: r.top + r.height / 2,
+      visible: true,
+    });
+  };
+
+  const hideTip = () => {
+    setTooltip((prev) => ({ ...prev, visible: false }));
+  };
+
   return (
-    <div className="w-full h-full bg-[#1D1C22] flex flex-col select-none">
-      
-      {/* Header with Logo + Wordmark */}
-      <div className="p-4 flex items-center justify-between border-b border-white/[0.08]">
-        <div className="flex items-center gap-2.5">
-          <Logo className="w-6 h-6" />
-          <span className="font-serif text-lg font-medium tracking-tight text-[#EDEAE3]">
-            Space
-          </span>
-        </div>
-        <button 
-          onClick={onToggle}
-          className="hidden md:flex p-1.5 rounded-lg text-[#A6A2AE] hover:text-[#EDEAE3] hover:bg-white/[0.06] transition-colors"
-          title="Collapse sidebar"
-          aria-label="Collapse sidebar"
-        >
-          <PanelLeftClose className="w-4 h-4" />
-        </button>
-      </div>
+    <aside className="rail" id="rail" aria-label="Sidebar">
+      {/* Brand Header */}
+      <a
+        className="brand"
+        href="#prompt"
+        onClick={(e) => {
+          e.preventDefault();
+          onNewChat();
+          if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+        }}
+        onMouseEnter={(e) => showTip(e, 'SpaceAI, go to prompt')}
+        onMouseLeave={hideTip}
+        aria-label="SpaceAI, go to prompt"
+      >
+        <KurageLogo className="brand-mark" />
+        <span className="wordmark" aria-hidden="true">
+          SpaceAI
+        </span>
+      </a>
 
-      {/* New Chat Button */}
-      <div className="p-3 pb-2">
+      {/* Workspace Nav Items */}
+      <nav className="rail-nav" aria-label="Workspace">
+        {/* New Chat */}
         <button
-          onClick={onNewChat}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-[#C97B4A] hover:bg-[#DA8E5D] text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+          className="nav-item"
+          type="button"
+          aria-current="page"
+          onClick={() => {
+            onNewChat();
+            if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+          }}
+          onMouseEnter={(e) => showTip(e, 'New chat')}
+          onMouseLeave={hideTip}
         >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>New Chat</span>
+          <KurageIcon name="pen" className="i" />
+          <span className="label">New chat</span>
         </button>
-      </div>
 
-      {/* Search Input Box */}
-      <div className="px-3 pb-3">
-        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[#26242C] border border-white/[0.08] rounded-xl focus-within:border-[#C97B4A] transition-colors">
-          <Search className="w-3.5 h-3.5 text-[#716D7A] shrink-0" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search conversations..."
-            className="w-full bg-transparent text-xs text-[#EDEAE3] placeholder-[#716D7A] outline-none"
-          />
-        </div>
-      </div>
+        {/* History */}
+        <button
+          className="nav-item"
+          type="button"
+          onClick={() => {
+            onOpenHistory();
+            if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+          }}
+          onMouseEnter={(e) => showTip(e, 'History')}
+          onMouseLeave={hideTip}
+          aria-haspopup="dialog"
+        >
+          <KurageIcon name="history" className="i" />
+          <span className="label">History</span>
+          <span className="kbd-hint" aria-hidden="true">
+            <span data-mod>{modKey}</span>K
+          </span>
+        </button>
 
-      {/* History List */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-0.5 scrollbar-thin">
-        <div className="text-[10px] font-semibold text-[#716D7A] uppercase tracking-wider px-2 py-1">
-          Recent
-        </div>
+        {/* Library */}
+        <button
+          className="nav-item"
+          type="button"
+          onClick={() => {
+            onOpenLibrary?.();
+            if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+          }}
+          onMouseEnter={(e) => showTip(e, 'Prompt library')}
+          onMouseLeave={hideTip}
+          aria-haspopup="dialog"
+        >
+          <KurageIcon name="bookmark" className="i" />
+          <span className="label">Library</span>
+        </button>
+      </nav>
 
-        {filteredSessions.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-[#716D7A] italic">
-            {searchQuery ? 'No matching conversations' : 'No conversations yet'}
-          </div>
+      {/* Recent list (hidden when collapsed on desktop via CSS .app[data-rail="collapsed"] .rail-recent) */}
+      <section className="rail-recent" aria-labelledby="recent-heading">
+        <h2 className="rail-heading" id="recent-heading">
+          recent
+        </h2>
+        {sessions.length === 0 ? (
+          <p className="recent-empty" id="recent-empty">
+            Nothing yet. Prompts you run in this app show up here.
+          </p>
         ) : (
-          filteredSessions.map(session => {
-            const isActive = currentSessionId === session.id;
-            const isEditing = editingSessionId === session.id;
-            const isMenuOpen = activeMenuSessionId === session.id;
+          <ul className="recent-list" id="recent-list">
+            {sessions.map((session) => {
+              const isSelected = session.id === currentSessionId;
+              const isEditing = editingSessionId === session.id;
 
-            return (
-              <div 
-                key={session.id}
-                onClick={() => {
-                  if (!isEditing) onSelectSession(session.id);
-                }}
-                className={`group relative flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors text-xs ${
-                  isActive 
-                    ? 'border-l-2 border-l-[#C97B4A] bg-[#26242C] text-[#EDEAE3] font-medium' 
-                    : 'text-[#A6A2AE] hover:bg-white/[0.04] hover:text-[#EDEAE3]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                  <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[#C97B4A]' : 'opacity-60'}`} />
-                  
+              return (
+                <li key={session.id} className="group relative">
                   {isEditing ? (
-                    <div className="flex items-center gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1 px-2 py-1 bg-white/[0.08] rounded-[10px]">
                       <input
                         ref={editInputRef}
                         type="text"
                         value={editTitle}
                         onChange={(e) => setEditTitle(e.target.value)}
-                        onBlur={() => handleSaveRename(session.id)}
                         onKeyDown={(e) => handleKeyDownRename(e, session.id)}
-                        className="w-full bg-[#1D1C22] border border-[#C97B4A] rounded px-1.5 py-0.5 text-xs text-[#EDEAE3] outline-none"
+                        className="flex-1 bg-transparent border-0 outline-none text-xs text-[var(--mist-50)] px-1 py-1"
                       />
-                      <button 
+                      <button
+                        type="button"
                         onClick={() => handleSaveRename(session.id)}
-                        className="p-1 text-[#7A9B76] hover:bg-white/[0.06] rounded"
+                        className="p-1 text-[var(--accent)] hover:text-white"
                       >
                         <Check className="w-3.5 h-3.5" />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSessionId(null)}
+                        className="p-1 text-[var(--mist-500)] hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ) : (
-                    <span className="truncate">{session.title || 'New Conversation'}</span>
-                  )}
-                </div>
-
-                {!isEditing && (
-                  <div className="relative">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveMenuSessionId(isMenuOpen ? null : session.id);
+                    <div
+                      onClick={() => {
+                        onSelectSession(session.id);
+                        if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
                       }}
-                      className={`p-1 rounded-md text-[#A6A2AE] hover:text-[#EDEAE3] hover:bg-white/[0.06] transition-opacity ${
-                        isMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      className={`group flex items-center justify-between w-full min-h-[36px] px-3 py-1.5 rounded-[10px] text-[13px] text-left cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-white/[0.08] text-[var(--mist-50)]'
+                          : 'text-[var(--mist-400)] hover:bg-white/[0.055] hover:text-[var(--mist-50)]'
                       }`}
-                      title="More options"
-                      aria-label="More options"
                     >
-                      <MoreHorizontal className="w-3.5 h-3.5" />
-                    </button>
+                      <span className="truncate flex-1 min-w-0 pr-2">
+                        {session.title || 'Untitled Conversation'}
+                      </span>
 
-                    {/* Context Dropdown */}
-                    {isMenuOpen && (
-                      <div 
-                        ref={menuRef}
-                        className="absolute right-0 top-full mt-1 w-28 bg-[#26242C] border border-white/[0.1] rounded-xl shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
+                          type="button"
                           onClick={(e) => handleStartRename(session, e)}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#EDEAE3] hover:bg-white/[0.06] text-left"
+                          className="p-1 text-[var(--mist-400)] hover:text-[var(--mist-50)] rounded hover:bg-white/[0.08]"
+                          title="Rename"
                         >
-                          <Edit2 className="w-3 h-3 text-[#A6A2AE]" />
-                          <span>Rename</span>
+                          <Edit2 className="w-3 h-3" />
                         </button>
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setActiveMenuSessionId(null);
                             onDeleteSession(session.id);
                           }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#D9695F] hover:bg-[#D9695F]/10 text-left"
+                          className="p-1 text-[var(--mist-400)] hover:text-[var(--danger)] rounded hover:bg-white/[0.08]"
+                          title="Delete"
                         >
-                          <Trash2 className="w-3 h-3 text-[#D9695F]" />
-                          <span>Delete</span>
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         )}
+      </section>
+
+      {/* Rail Foot */}
+      <div className="rail-foot">
+        <button
+          className="nav-item"
+          type="button"
+          id="motion-toggle"
+          onClick={onToggleMotion}
+          onMouseEnter={(e) => showTip(e, isMotionPlaying ? 'Pause motion' : 'Play motion')}
+          onMouseLeave={hideTip}
+        >
+          <KurageIcon name={isMotionPlaying ? 'pause' : 'play'} className="i" />
+          <span className="label">{isMotionPlaying ? 'Pause motion' : 'Play motion'}</span>
+        </button>
+
+        <button
+          className="nav-item"
+          type="button"
+          onClick={() => {
+            onOpenShortcuts();
+            if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+          }}
+          onMouseEnter={(e) => showTip(e, 'Keyboard shortcuts')}
+          onMouseLeave={hideTip}
+          aria-haspopup="dialog"
+        >
+          <KurageIcon name="help" className="i" />
+          <span className="label">Shortcuts</span>
+        </button>
+
+        {!isMobileDrawer && (
+          <button
+            className="nav-item rail-expand"
+            type="button"
+            id="rail-toggle"
+            onClick={onToggleCollapse}
+            onMouseEnter={(e) => showTip(e, isCollapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+            onMouseLeave={hideTip}
+            aria-expanded={!isCollapsed}
+            aria-controls="rail"
+          >
+            <KurageIcon name="panel" className="i" />
+            <span className="label">{isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
+          </button>
+        )}
+
+        <button
+          className="nav-item profile"
+          type="button"
+          onClick={() => {
+            onOpenSettings?.();
+            if (isMobileDrawer && onCloseMobileDrawer) onCloseMobileDrawer();
+          }}
+          onMouseEnter={(e) => showTip(e, userName)}
+          onMouseLeave={hideTip}
+        >
+          <span className="avatar" aria-hidden="true">
+            <KurageAvatar size={28} />
+          </span>
+          <span className="label">
+            {userName} <small>Multimodal Pro</small>
+          </span>
+        </button>
       </div>
 
-      {/* Footer Info */}
-      <div className="p-3 border-t border-white/[0.08] flex flex-col gap-1 bg-[#17161B]">
-        <button 
-          onClick={onOpenSettings}
-          className="flex items-center gap-2.5 text-xs text-[#A6A2AE] hover:text-[#EDEAE3] px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left cursor-pointer"
+      {/* Tooltip for collapsed desktop rail */}
+      {tooltip.visible && (
+        <div
+          className="tooltip"
+          id="tooltip"
+          aria-hidden="true"
+          style={{
+            left: 84,
+            top: tooltip.top,
+          }}
         >
-          <Settings className="w-4 h-4 text-[#716D7A]" />
-          <span>Settings</span>
-        </button>
-        <button 
-          onClick={onOpenHelp}
-          className="flex items-center gap-2.5 text-xs text-[#A6A2AE] hover:text-[#EDEAE3] px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors text-left cursor-pointer"
-        >
-          <HelpCircle className="w-4 h-4 text-[#716D7A]" />
-          <span>Help & Feedback</span>
-        </button>
-      </div>
-
-    </div>
+          {tooltip.text}
+        </div>
+      )}
+    </aside>
   );
 }
